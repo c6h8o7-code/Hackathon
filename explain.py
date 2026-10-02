@@ -6,9 +6,29 @@
 - tkinter 图形界面
 """
 
-import tkinter as tk
 import random
 import re
+
+# tkinter 是标准库，但部分精简版 Python（如某些嵌入式/自编译发行版）没有装。
+# 这里做成软导入：缺了也不让整个程序起不来，主程序会给出友好提示。
+try:
+    import tkinter as tk
+except ImportError:          # pragma: no cover
+    tk = None
+
+import word_explosion
+
+# spell 提供统一的词库读取、开窗、图标等；缺了也不影响本模块独立运行
+try:
+    import spell
+except Exception:            # pragma: no cover
+    spell = None
+
+# 单词笔记（错词 / 手动加入）；导入失败不要影响做题
+try:
+    import word_note as word_notebook
+except Exception:
+    word_notebook = None
 
 def available():
     """本机是否能用 tkinter 画界面。"""
@@ -16,6 +36,7 @@ def available():
 
 
 BG="#759CE6"
+FAIL_THRESHOLD = 3     # 同一题连续错几次触发爆炸
 
 # ============================================================
 # 第一部分：内置词表（中考核心词，格式：单词|词性|释义）
@@ -264,6 +285,13 @@ class WordQuizApp:
         self.root.attributes("-fullscreen", True)
         self.root.resizable(False, False)
 
+        # 让主程序/顶部「退出」按钮能管到这个窗口：登记 + 接管右上角关闭
+        try:
+            self._spell = spell
+            spell.attach_window(root)
+        except Exception:
+            self._spell = None
+
         self.all_words = word_bank
         self.remaining = word_bank.copy()
         self.total = len(word_bank)
@@ -273,6 +301,7 @@ class WordQuizApp:
         self.buttons = []
         self.timer_id = None
         self.locked = False
+        self.wrong_streak = 0       # 当前题的连续错误次数
 
         self._build_ui()
 
@@ -314,18 +343,19 @@ class WordQuizApp:
         )
         self.status_label.pack(pady=5)
 
-        # 退出按钮
+        # 退出按钮（左上角，和其他练习窗口一致）
         self.quit_btn = tk.Button(
-            self.root, text="退出", font=("微软雅黑", 12),
+            self.root, text="退出", font=("微软雅黑", 11),
             bg="#e74c3c", fg="white", activebackground="#c0392b",
-            relief="flat", padx=20, pady=5, cursor="hand2",
+            relief="flat", padx=18, pady=4, cursor="hand2",
             command=self.quit_app
         )
-        self.quit_btn.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
+        self.quit_btn.place(relx=0.0, rely=0.0, anchor="nw", x=18, y=14)
 
     def next_question(self):
         self.clear_buttons()
         self.locked = False
+        self.wrong_streak = 0
         self.status_label.config(text="")
 
         if not self.remaining:
@@ -368,6 +398,7 @@ class WordQuizApp:
 
         if selected == self.correct:
             self.locked = True
+            self.wrong_streak = 0
             btn.config(bg="#27ae60", fg="white")
             self.status_label.config(text="✓ 回答正确！", fg="#27ae60")
             self.clear_buttons()
@@ -386,8 +417,75 @@ class WordQuizApp:
             self.timer_id = self.root.after(2000, self.next_question)
         else:
             btn.config(bg="#e74c3c", fg="white", state="disabled")
-            self.status_label.config(text="✗ 错误，再试试！", fg="#e74c3c")
-            self.root.after(300, lambda: self.remove_button(btn))
+            self.wrong_streak += 1
+            remain = max(0, FAIL_THRESHOLD - self.wrong_streak)
+            alive_btns = [b for b in self.buttons if b.winfo_exists() and b.cget("state") != "disabled"]
+            # 当剩余选项只剩 1 个（也就是只剩正确答案一个按钮）时，
+            # 相当于"再选下去也只能全错"，直接触发爆炸
+            forced = (len(alive_btns) <= 1)
+            if remain > 0 and not forced:
+                self.status_label.config(
+                    text=f"✗ 错误，再试试！（再错 {remain} 次单词就炸了！）",
+                    fg="#e74c3c")
+                self.root.after(300, lambda: self.remove_button(btn))
+            else:
+                self.status_label.config(
+                    text=f"✗ 连错 {self.wrong_streak} 次！单词炸啦！💥",
+                    fg="#e74c3c")
+                self.root.after(200, lambda: self.remove_button(btn))
+                self.root.after(400, self._trigger_explosion)
+
+    def _trigger_explosion(self):
+        """连续答错 → 单词砸地炸开，结束后自动进入下一题。
+        同时把单词加入「错词本」笔记，方便之后从词书里复习。
+        """
+        self.locked = True
+        # 把题面按钮都清掉
+        for b in list(self.buttons):
+            try:
+                b.destroy()
+            except Exception:
+                pass
+        self.buttons = []
+        try:
+            self.word_label.config(text="")
+        except Exception:
+            pass
+        self.tip_label.config(text=u"单词被炸飞啦！已加入错词本 📒")
+
+        # 这题答错了也要从 remaining 中剔除，避免反复抽到
+        for item in list(self.remaining):
+            if item[0] == self.current:
+                self.remaining.remove(item)
+                break
+
+        # 加入错词本
+        if word_notebook is not None:
+            try:
+                word_notebook.add_wrong(self.current, "", self.correct, "")
+            except Exception as exc:
+                print("加入错词本失败:", exc)
+
+        def _after():
+            if self.root.winfo_exists():
+                self.next_question()
+
+        try:
+            word_explosion.trigger(
+                self.root, self.current,
+                duration_ms=2600,
+                bg="#f0f8ff",
+                word_color="#1e3a8a",
+                letter_color="#e74c3c",
+                letter_outline="#7b1d1d",
+                flash_color="#ffd04a",
+                smoke_color="#c9d6e8",
+                font_size=72,
+                on_done=_after,
+            )
+        except Exception as exc:
+            print("word_explosion 触发失败: %s" % exc)
+            self.root.after(500, _after)
 
     def remove_button(self, btn):
         if btn in self.buttons:
@@ -404,16 +502,33 @@ class WordQuizApp:
 
     def quit_app(self):
         if self.timer_id:
-            self.root.after_cancel(self.timer_id)
-        self.root.destroy()
+            try:
+                self.root.after_cancel(self.timer_id)
+            except tk.TclError:
+                pass
+            self.timer_id = None
+        # 走统一的关窗入口，保证登记表被清干净（否则之后 has_window 永远为真）
+        if self._spell is not None:
+            self._spell.clear_window()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
 
 # ============================================================
 # 第五部分：主入口
 # ============================================================
 
-def run():
-    random.seed()  # 随机种子
+def run(banner=None):
+    """打开「单词翻译测试」窗口（固定 100 词，四选一）。
+
+    banner: 窗口顶部图标；主程序会用统一入口把默认图标传进来。
+    """
+    random.seed()                       # 随机种子
+
+    if not available():
+        raise RuntimeError(u'本机 Python 缺少 tkinter，无法打开单词翻译测试')
 
     # 1. 解析内置词表
     entries = parse_raw_words(RAW_WORDS)
@@ -423,9 +538,19 @@ def run():
     bank = build_word_bank(entries)
     print(f"生成 {len(bank)} 道题目")
 
-    # 4. 启动界面
-    root = tk.Tk()
-    app = WordQuizApp(root, bank)
-    root.mainloop()
+    # 3. 走 spell 的统一开窗入口：顶部图标 + 退出按钮 + 单窗口管理一致
+    if spell is None:                   # 兜底：没有 spell 时自己开窗
+        root = tk.Tk()
+        WordQuizApp(root, bank)
+        root.mainloop()
+        return
+
+    if spell.has_window():
+        spell.focus_window()
+        return
+    spell.open_window(lambda r: WordQuizApp(r, bank),
+                      banner or spell.default_banner())
+
+
 if __name__ == "__main__":
     run()

@@ -12,7 +12,7 @@
 
 import tkinter as tk
 import random
-import threading
+import threading, word_note
 
 try:
     import winsound
@@ -550,12 +550,21 @@ class WordLearningApp:
         self.root.bind("<KeyPress-P>", lambda e: self.toggle_pause())
         self.root.bind("<KeyPress-m>", lambda e: self.toggle_mute())
         self.root.bind("<KeyPress-M>", lambda e: self.toggle_mute())
+        self.root.bind("<KeyPress-+>", lambda e: self.addtolist())
+        
+    def addtolist(self):
+        if self.state == "quiz" or self.state == "finish": return
+        
+        t = word_note.load_data()
+        t.append(word_note.make_word(self.lbl_word.cget("text"), self.lbl_cn.cget("text"), ""))
+        self.next_word(t)
 
     def _on_next_key(self, event=None):
         if self.state == "quiz":
             return
         if self.state == "finish":
             return
+        
         self.next_word()
 
     # ============================================================
@@ -603,7 +612,7 @@ class WordLearningApp:
             self.locked = False
             self.lbl_help.config(
                 text="空格/→/Enter：继续   ← ：上一个   F5：重听   "
-                     "P：暂停/继续   M：静音   Esc：退出",
+                     "P：暂停/继续   M：静音   Esc：退出  +：加入单词笔记",
                 fg="#e0e7ff"
             )
 
@@ -612,7 +621,7 @@ class WordLearningApp:
         self.locked = False
         self.lbl_help.config(
             text="空格/→/Enter：继续   ← ：上一个   F5：重听   "
-                 "P：暂停/继续   M：静音   Esc：退出",
+                 "P：暂停/继续   M：静音   Esc：退出  +：加入单词笔记",
             fg="#e0e7ff"
         )
 
@@ -675,7 +684,7 @@ class WordLearningApp:
                  f"[{bar}]  {pct*100:.0f}%{pause}{mute}"
         )
 
-    def next_word(self):
+    def next_word(self, t=None):
         if self.state == "quiz":
             return
         if self.state == "finish":
@@ -688,8 +697,10 @@ class WordLearningApp:
                 text=f"⏳ 请先阅读 {self.delay_ms/1000:.2f} 秒…",
                 fg="#fbbf24"
             )
-            return
 
+            return
+        if t:
+            word_note.save_data(t)
         self.sound.next_word()
         self.index += 1
         self.learned_count += 1

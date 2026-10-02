@@ -315,8 +315,8 @@ class CrosswordGame:
         self.start_time = None
         self.timer_running = False
         self.elapsed = 0
-
-        self.word_count = 5   # 默认难度：5 词
+        self.using=0
+        self.word_count = 6   # 默认难度：5 词
 
         self.generator = CrosswordGenerator(WORD_BANK, grid_size=15)
 
@@ -390,7 +390,7 @@ class CrosswordGame:
             top, text="纵横填字 · 中考高频词",
             font=("微软雅黑", self.TITLE_FONT_SIZE, "bold"),
             bg="#f8fafc", fg="#1e3a8a"
-        ).pack(side="left")
+        ).pack(side="right")
 
         self.timer_label = tk.Label(
             top, text="⏱ 00:00", font=("Consolas", 16, "bold"),
@@ -450,7 +450,8 @@ class CrosswordGame:
         action.pack(fill="x", pady=(0, 10))
 
         self._mk_btn(action, "✓ 检查答案", "#16a34a", self.check_all).pack(fill="x", pady=2)
-        self._mk_btn(action, "💡 提示一格", "#f59e0b", self.hint_one).pack(fill="x", pady=2)
+        self.idea=self._mk_btn(action, "💡 提示一格", "#f59e0b", self.hint_one)
+        self.idea.pack(fill="x", pady=2)
         self._mk_btn(action, "🗑 清空", "#ef4444", self.clear_input).pack(fill="x", pady=2)
         self._mk_btn(action, "🔄 换一题", "#3b82f6", self.new_puzzle).pack(fill="x", pady=2)
 
@@ -505,7 +506,7 @@ class CrosswordGame:
             relief="flat", padx=18, pady=5, cursor="hand2",
             command=self.root.destroy
         )
-        self.quit_btn.place(relx=1.0, rely=1.0, anchor="se", x=-20, y=-18)
+        self.quit_btn.place(relx=0.0, rely=0.0, anchor="nw", x=20, y=18)
 
         self.root.bind("<Key>", self.on_key)
 
@@ -570,7 +571,7 @@ class CrosswordGame:
             dlg.destroy()
             self.new_puzzle()
 
-        for n, color in [(4, "#22c55e"), (5, "#f59e0b"), (6, "#ef4444")]:
+        for n, color in [(5, "#22c55e"), (6, "#f59e0b"), (7, "#ef4444"), (8, "#f52323"), (9, "#ff0000")]:
             tk.Button(
                 btn_frame, text=f"{n} 词", font=("微软雅黑", 14, "bold"),
                 bg=color, fg="white", activebackground=color,
@@ -591,7 +592,8 @@ class CrosswordGame:
         if not puzzle:
             messagebox.showerror("错误", "关卡生成失败，请再试一次")
             return
-
+        self.using=0
+        self.idea.config(state=tk.NORMAL)
         self.words_info = puzzle["words"]
         prefilled = puzzle["prefilled"]
 
@@ -828,8 +830,16 @@ class CrosswordGame:
         else:
             self.status_label.config(text="有错误，红色格子需要修改", fg="#ef4444")
 
+    MAX_HINTS = 2      # 每关最多提示次数（用户要求：填字只能两次提示）
+
     def hint_one(self):
         if not self.game_started:
+            return
+        if self.using >= self.MAX_HINTS:
+            self.status_label.config(
+                text=f"提示次数已用完（{self.MAX_HINTS}/{self.MAX_HINTS}）",
+                fg="#ef4444")
+            self.idea.config(state=tk.DISABLED)
             return
         empties = [k for k, st in self.state.items()
                    if not st["prefilled"] and not st["letter"]]
@@ -843,7 +853,15 @@ class CrosswordGame:
         st = self.state[k]
         st["letter"] = st["solution"]
         self.cells[k].config(text=st["solution"], fg="#f59e0b")
-        self.status_label.config(text="已揭示一个字母", fg="#f59e0b")
+        self.using += 1
+        remain = self.MAX_HINTS - self.using
+        if remain > 0:
+            self.status_label.config(
+                text=f"已揭示一个字母（还剩 {remain} 次提示）", fg="#f59e0b")
+        else:
+            self.status_label.config(
+                text=f"已揭示一个字母（提示次数已用完）", fg="#ef4444")
+            self.idea.config(state=tk.DISABLED)
 
     def clear_input(self):
         if not self.game_started:

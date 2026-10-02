@@ -1,19 +1,48 @@
-"""
-单词笔记 - Python 桌面应用
-基于艾宾浩斯遗忘曲线的单词复习系统
+# -*- coding: utf-8 -*-
+"""单词笔记 —— 难词/错词本，基于艾宾浩斯遗忘曲线的复习系统。
+
+主程序调用：
+    word_note.run(banner=...)
+
+数据文件：A.app_dir() / "review_data.json"
+
+这份数据是全局共用的：拼写测试 / 填单词游戏 / 单词翻译测试里「连错多次单词爆炸」
+会自动把那个单词加进来（标为重点复习），学习单词界面点「⭐ 加入笔记」也会加进来。
+所以打开这个窗口就能看到它们，并按 1 / 2 / 4 / 7 / 15 天的间隔复习。
+
+窗口结构（相对上传版的改动，其余逻辑一字未改）：
+    - tkinter 改成软导入：精简版 Python 缺 tkinter 时主程序仍能启动
+    - 页面建在 self.body 上，不再清空 root 的所有子控件（否则顶部图标会被抹掉）
+    - 左上角有「退出」按钮，和其余练习窗口一致
+    - run() 走 spell 的统一开窗入口：顶部图标 + 单窗口管理一致
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
 import json
-import pathlib, A
 from datetime import datetime, timedelta
+
+# tkinter 是标准库，但个别精简版 Python 没带。做成软导入：缺了也不让主程序起不来。
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+except ImportError:          # pragma: no cover
+    tk = None
+    ttk = None
+    messagebox = None
+
+import A
 
 # ─── 常量 ─────────────────────────────────────────────────
 
 DATA_FILE = A.app_dir() / "review_data.json"
 REVIEW_INTERVALS = [1, 2, 4, 7, 15]  # 艾宾浩斯复习间隔（天）
 MAX_CORRECT = 3  # 累计正确次数达标则完成
+
+WINDOW_TITLE = "十八单词 · 单词笔记"
+
+
+def available():
+    """tkinter 是否可用（主程序据此决定要不要弹提示）"""
+    return tk is not None
 
 
 # ─── 数据管理 ─────────────────────────────────────────────
@@ -22,17 +51,27 @@ def load_data():
     """从文件加载单词数据"""
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        return []
     except Exception:
         return []
 
+
 def save_data(words):
     """保存单词数据到文件"""
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(words, f, ensure_ascii=False, indent=2)
+    try:
+        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(words, f, ensure_ascii=False, indent=2)
+        return True
+    except OSError as exc:
+        print("保存单词笔记失败: %s" % exc)
+        return False
 
 
-def make_word(english: str, chinese: str, note: str = "") -> dict:
+def make_word(english: str, chinese: str, note: str = "", priority: bool = False) -> dict:
     """创建新单词记录"""
     return {
         "english": english,
@@ -42,41 +81,172 @@ def make_word(english: str, chinese: str, note: str = "") -> dict:
         "review_stage": 0,       # 当前复习阶段索引 (0-4 对应 1/2/4/7/15天)
         "correct_count": 0,      # 累计正确次数
         "next_review": (datetime.now() + timedelta(days=1)).isoformat(),  # 首次复习: 1天后
-        "priority": False,       # 是否重点复习
+        "priority": bool(priority),  # 是否重点复习（错词自动 True）
         "completed": False,      # 是否完成全部复习
     }
+
+
+# ─── 对外 API（供其他练习模块调用：加错词 / 手动加 / 查询 / 计数） ─
+
+def note_path():
+    """笔记数据文件路径（便于其他模块校验）"""
+    return DATA_FILE
+
+
+def _normalize(english: str) -> str:
+    """统一大小写/两端空白，避免 'Apple' 和 'apple' 被当成两个单词"""
+    return (english or "").strip().lower()
+
+
+def _find(words, english: str):
+    key = _normalize(english)
+    for idx, w in enumerate(words):
+        if _normalize(w.get("english", "")) == key:
+            return idx, w
+    return -1, None
+
+
+def contains(english: str) -> bool:
+    """某个单词是否已经在笔记里（忽略大小写/两端空白）"""
+    _, w = _find(load_data(), english)
+    return w is not None
+
+
+def count() -> int:
+    """笔记里已有多少个单词"""
+    return len(load_data())
+
+
+def _add(english: str, chinese: str, note: str = "", priority: bool = False):
+    """底层加词：已存在则仅按需升级 priority；不存在则新增并写入文件。
+    返回 (是否新增, 单词记录)。"""
+    english = (english or "").strip()
+    chinese = (chinese or "").strip()
+    if not english or not chinese:
+        return False, None
+
+    words = load_data()
+    idx, existing = _find(words, english)
+    if existing is not None:
+        # 已存在：若中文释义比已有长（更详细）则更新；若这次要求重点复习则升级 priority
+        changed = False
+        if priority and not existing.get("priority", False):
+            existing["priority"] = True
+            changed = True
+        if note and not existing.get("note"):
+            existing["note"] = note
+            changed = True
+        if len(chinese) > len(existing.get("chinese", "")):
+            existing["chinese"] = chinese
+            changed = True
+        if changed:
+            save_data(words)
+        return False, existing
+
+    record = make_word(english, chinese, note=note, priority=priority)
+    words.append(record)
+    save_data(words)
+    return True, record
+
+
+def add_wrong(word: str, pos: str = "", meaning: str = "", ipa: str = ""):
+    """爆炸触发时调用：把错词加进笔记，自动标为重点复习。
+    参数顺序兼容之前 spell/explain 的调用：(word, pos, meaning, ipa)。"""
+    parts = []
+    if pos != "":
+        parts.append(pos)
+    if meaning != "":
+        parts.append(meaning)
+    chinese = " ".join(parts) if parts != [] else (meaning or "")
+    note_parts = []
+    if ipa != "":
+        note_parts.append("音标: %s" % ipa)
+    note_parts.append("来自：错题自动加入")
+    note = "  ".join(note_parts)
+    return _add(word, chinese, note=note, priority=True)
+
+
+def add_manual(word: str, pos: str = "", meaning: str = "", ipa: str = ""):
+    """学习界面点「⭐ 加入笔记」调用：加进笔记但不标重点。"""
+    parts = []
+    if pos:
+        parts.append(pos)
+    if meaning:
+        parts.append(meaning)
+    chinese = " ".join(parts) if parts else (meaning or "")
+    note_parts = []
+    if ipa:
+        note_parts.append("音标: %s" % ipa)
+    note_parts.append("来自：手动加入")
+    note = "  ".join(note_parts)
+    return _add(word, chinese, note=note, priority=False)
 
 
 # ─── 主应用 ───────────────────────────────────────────────
 
 class WordNotesApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root):  # root: tk.Tk（字符串化以兼容 tkinter 缺失时的导入）
         self.root = root
-        self.root.title("单词笔记")
-        self.root.geometry("860x620")
-        self.root.minsize(700, 480)
+        self.root.title(WINDOW_TITLE)
+        self.root.geometry("900x760")
+        self.root.minsize(820, 600)
         self.root.configure(bg="#ffffff")
 
-        self.words: list[dict] = load_data()
+        # 让主程序的单窗口管理 / 顶部退出按钮能管到这个窗口
+        try:
+            import spell
+            self._spell = spell
+            spell.attach_window(root)
+        except Exception:
+            self._spell = None
+
+        self.words: list = load_data()
         self.ROW_HEIGHT = 42
         self._mode = "simple"  # simple | scroll
 
+        # 页面都建在这个 body 里：清页面时不会把窗口顶部的图标连带抹掉
+        self.body = tk.Frame(root, bg="#ffffff")
+        self.body.pack(fill=tk.BOTH, expand=True)
+
         self._build_main_page()
         self._refresh_list()
+
+    # ─── 退出 ─────────────────────────────────────────────
+    def _quit(self):
+        """退出：走统一的关窗入口，没装 spell 时直接销毁本窗口"""
+        spell = getattr(self, "_spell", None)
+        if spell is not None:
+            try:
+                spell.clear_window()
+                return
+            except Exception:
+                pass
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     # ═══════════════════════════════════════════════════════
     #  主页面 UI
     # ═══════════════════════════════════════════════════════
 
     def _build_main_page(self):
-        # 清除旧内容
-        for w in self.root.winfo_children():
+        # 清除旧内容（只清 body，保留窗口顶部的图标）
+        for w in self.body.winfo_children():
             w.destroy()
 
         # ── 顶部栏 ──
-        top = tk.Frame(self.root, bg="#ffffff", height=64)
+        top = tk.Frame(self.body, bg="#ffffff", height=64)
         top.pack(fill=tk.X, padx=20, pady=(16, 0))
         top.pack_propagate(False)
+
+        # 左上：退出（和其他练习窗口一致的位置）
+        tk.Button(
+            top, text="退出", font=("Microsoft YaHei", 11),
+            bg="#e74c3c", fg="white", activebackground="#c0392b",
+            relief=tk.FLAT, padx=14, pady=6, cursor="hand2",
+            command=self._quit,
+        ).pack(side=tk.LEFT)
 
         # 左上：添加单词
         tk.Button(
@@ -84,7 +254,7 @@ class WordNotesApp:
             bg="#4f46e5", fg="white", activebackground="#4338ca",
             relief=tk.FLAT, padx=16, pady=8, cursor="hand2",
             command=self._add_word,
-        ).pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT, padx=(10, 0))
 
         # 中间：标题
         tk.Label(
@@ -101,7 +271,7 @@ class WordNotesApp:
         ).pack(side=tk.RIGHT)
 
         # ── 列表区域 ──
-        list_frame = tk.Frame(self.root, bg="#ffffff")
+        list_frame = tk.Frame(self.body, bg="#ffffff")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(12, 16))
 
         # 表头
@@ -202,16 +372,17 @@ class WordNotesApp:
         tk.Label(row, text=str(index), font=("Microsoft YaHei", 11),
                  bg=row_bg, fg="#9ca3af", width=6, anchor="w").pack(side=tk.LEFT, padx=6)
 
-        tk.Label(row, text=word["english"], font=("Microsoft YaHei", 11, "bold"),
+        tk.Label(row, text=word.get("english", ""), font=("Microsoft YaHei", 11, "bold"),
                  bg=row_bg, fg="#4f46e5", anchor="w", width=20).pack(side=tk.LEFT, padx=6)
 
-        tk.Label(row, text=word["chinese"], font=("Microsoft YaHei", 11),
+        tk.Label(row, text=word.get("chinese", ""), font=("Microsoft YaHei", 11),
                  bg=row_bg, fg="#1f2937", anchor="w", width=20).pack(side=tk.LEFT, padx=6)
 
         # 备注 + 复习次数
         count = word.get("correct_count", 0)
-        if word["note"]:
-            note_text = f"{word['note']}（已复习{count}次）"
+        note = word.get("note", "")
+        if note:
+            note_text = f"{note}（已复习{count}次）"
             note_color = "#7c3aed"
         else:
             note_text = "点击添加备注…" if count == 0 else f"点击添加备注…（已复习{count}次）"
@@ -220,6 +391,11 @@ class WordNotesApp:
                             bg=row_bg, fg=note_color, anchor="w", width=26, cursor="hand2")
         note_lbl.pack(side=tk.LEFT, padx=6)
         note_lbl.bind("<Button-1>", lambda e, w=word: self._edit_note(w))
+
+        # 重点复习标记（爆炸加进来的错词会带上）
+        if word.get("priority"):
+            tk.Label(row, text="重点", font=("Microsoft YaHei", 9),
+                     bg=row_bg, fg="#f59e0b", anchor="w").pack(side=tk.LEFT)
 
         tk.Button(row, text="删除", font=("Microsoft YaHei", 9),
                   bg=row_bg, fg="#ef4444", activebackground="#fef2f2",
@@ -307,7 +483,7 @@ class WordNotesApp:
         dialog.grab_set()
         self._center_dialog(dialog, 420, 220)
 
-        tk.Label(dialog, text=f"备注 — {word['english']}",
+        tk.Label(dialog, text=f"备注 — {word.get('english', '')}",
                  font=("Microsoft YaHei", 14, "bold"),
                  bg="#ffffff", fg="#1f2937").pack(pady=(20, 16))
 
@@ -316,7 +492,7 @@ class WordNotesApp:
                          relief=tk.SOLID, bd=1, highlightcolor="#7c3aed",
                          highlightbackground="#d1d5db")
         entry.pack(fill=tk.X, padx=40, pady=(0, 24), ipady=8)
-        entry.insert(0, word["note"])
+        entry.insert(0, word.get("note", ""))
         entry.focus_set()
         entry.select_range(0, tk.END)
 
@@ -332,7 +508,9 @@ class WordNotesApp:
                   cursor="hand2", command=save).pack()
 
     def _delete_word(self, word):
-        if messagebox.askyesno("确认删除", f"确定删除「{word['english']} - {word['chinese']}」？"):
+        if messagebox.askyesno(
+                "确认删除",
+                f"确定删除「{word.get('english', '')} - {word.get('chinese', '')}」？"):
             self.words.remove(word)
             save_data(self.words)
             self._refresh_list()
@@ -347,30 +525,41 @@ class WordNotesApp:
         today = datetime.now().date()
         review_words = []
         for w in self.words:
-            if w["completed"]:
+            if w.get("completed"):
                 continue
-            next_r = datetime.fromisoformat(w["next_review"]).date()
+            try:
+                next_r = datetime.fromisoformat(w["next_review"]).date()
+            except (KeyError, ValueError):
+                next_r = today
             if today >= next_r:
                 review_words.append(w)
 
         # 排序：重点复习的排前面，然后按阶段升序
-        review_words.sort(key=lambda w: (not w["priority"], w["review_stage"]))
+        review_words.sort(key=lambda w: (not w.get("priority"), w.get("review_stage", 0)))
 
         # 切换到复习页面
-        for wid in self.root.winfo_children():
+        for wid in self.body.winfo_children():
             wid.destroy()
 
         # ── 顶部栏 ──
-        top = tk.Frame(self.root, bg="#ffffff", height=64)
+        top = tk.Frame(self.body, bg="#ffffff", height=64)
         top.pack(fill=tk.X, padx=20, pady=(16, 0))
         top.pack_propagate(False)
+
+        # 左上：退出（位置和其他练习窗口一致）
+        tk.Button(
+            top, text="退出", font=("Microsoft YaHei", 11),
+            bg="#e74c3c", fg="white", activebackground="#c0392b",
+            relief=tk.FLAT, padx=14, pady=6, cursor="hand2",
+            command=self._quit,
+        ).pack(side=tk.LEFT)
 
         tk.Button(
             top, text="← 返回", font=("Microsoft YaHei", 12, "bold"),
             bg="#6b7280", fg="white", activebackground="#4b5563",
             relief=tk.FLAT, padx=16, pady=8, cursor="hand2",
             command=self._back_to_main,
-        ).pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT, padx=(10, 0))
 
         tk.Label(
             top, text="复习巩固，助力长期记忆",
@@ -378,12 +567,12 @@ class WordNotesApp:
             bg="#ffffff", fg="#7c3aed",
         ).pack(expand=True)
 
-        tk.Label(top, bg="#ffffff", width=14).pack(side=tk.RIGHT)
+        tk.Label(top, text="", bg="#ffffff", width=14).pack(side=tk.RIGHT)
 
         # ── 复习内容区 ──
         if not review_words:
             tk.Label(
-                self.root, text="🎉 暂无需要复习的单词，继续保持！",
+                self.body, text="🎉 暂无需要复习的单词，继续保持！",
                 font=("Microsoft YaHei", 16), bg="#ffffff", fg="#6b7280",
             ).pack(expand=True)
             return
@@ -397,7 +586,7 @@ class WordNotesApp:
         self._show_note = tk.BooleanVar(value=True)  # 是否显示备注提示
 
         # 复习卡片区域
-        self.review_frame = tk.Frame(self.root, bg="#ffffff")
+        self.review_frame = tk.Frame(self.body, bg="#ffffff")
         self.review_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=20)
 
         # 备注提示开关
@@ -477,9 +666,9 @@ class WordNotesApp:
         self.progress_label.config(
             text=f"第 {self._review_idx + 1} / {len(self._review_queue)} 个单词"
         )
-        self.chinese_label.config(text=word["chinese"])
+        self.chinese_label.config(text=word.get("chinese", ""))
         # 根据开关决定是否显示备注
-        if self._show_note.get() and word["note"]:
+        if self._show_note.get() and word.get("note"):
             self.note_hint.config(text=f"备注：{word['note']}")
         else:
             self.note_hint.config(text="")
@@ -496,7 +685,7 @@ class WordNotesApp:
         if self._review_idx >= len(self._review_queue):
             return
         word = self._review_queue[self._review_idx]
-        if self._show_note.get() and word["note"]:
+        if self._show_note.get() and word.get("note"):
             self.note_hint.config(text=f"备注：{word['note']}")
         else:
             self.note_hint.config(text="")
@@ -508,7 +697,7 @@ class WordNotesApp:
 
         word = self._review_queue[self._review_idx]
         answer = self.answer_entry.get().strip().lower()
-        correct = word["english"].strip().lower()
+        correct = str(word.get("english", "")).strip().lower()
 
         if not answer:
             return
@@ -518,16 +707,17 @@ class WordNotesApp:
         if answer == correct:
             # 回答正确
             self._review_correct += 1
-            word["correct_count"] += 1
+            word["correct_count"] = word.get("correct_count", 0) + 1
             word["priority"] = False
 
             # 判断是否完成
-            if word["correct_count"] >= MAX_CORRECT or word["review_stage"] >= len(REVIEW_INTERVALS) - 1:
+            if (word["correct_count"] >= MAX_CORRECT
+                    or word.get("review_stage", 0) >= len(REVIEW_INTERVALS) - 1):
                 word["completed"] = True
                 self.feedback_label.config(text="✅ 正确！该单词已完成全部复习！", fg="#059669")
             else:
                 # 进入下一阶段
-                word["review_stage"] += 1
+                word["review_stage"] = word.get("review_stage", 0) + 1
                 next_days = REVIEW_INTERVALS[word["review_stage"]]
                 word["next_review"] = (datetime.now() + timedelta(days=next_days)).isoformat()
                 self.feedback_label.config(
@@ -544,7 +734,7 @@ class WordNotesApp:
             word["priority"] = True  # 标记重点复习
             save_data(self.words)
             self.feedback_label.config(
-                text=f"❌ 正确答案是：{word['english']}，已标记为重点复习", fg="#dc2626"
+                text=f"❌ 正确答案是：{word.get('english', '')}，已标记为重点复习", fg="#dc2626"
             )
             self._review_idx += 1
             self.root.after(1800, self._show_current_word)
@@ -576,10 +766,15 @@ class WordNotesApp:
 
         # 统计剩余
         today = datetime.now().date()
-        remaining = sum(
-            1 for w in self.words
-            if not w["completed"] and datetime.fromisoformat(w["next_review"]).date() <= today
-        )
+        remaining = 0
+        for w in self.words:
+            if w.get("completed"):
+                continue
+            try:
+                if datetime.fromisoformat(w["next_review"]).date() <= today:
+                    remaining += 1
+            except (KeyError, ValueError):
+                remaining += 1
 
         if remaining > 0:
             tk.Label(
@@ -619,10 +814,32 @@ class WordNotesApp:
 
 # ─── 启动 ─────────────────────────────────────────────────
 
-def run():
-    root = tk.Tk()
-    app = WordNotesApp(root)
-    root.mainloop()
+def run(banner=None):
+    """打开单词笔记窗口（阻塞到关窗为止）。
+
+    banner : 窗口顶部图标；主程序会用统一入口把默认图标传进来
+    """
+    if not available():
+        raise RuntimeError("本机 Python 缺少 tkinter，无法打开单词笔记")
+
+    try:
+        import spell
+    except Exception:                    # 独立运行时没有 spell 也能开窗
+        spell = None
+
+    if spell is None:
+        root = tk.Tk()
+        WordNotesApp(root)
+        root.mainloop()
+        return
+
+    if spell.has_window():
+        spell.focus_window()
+        return
+    # 本窗口自己带左上角「退出」按钮（放在页面顶部栏里），所以不要框架再加一个
+    spell.open_window(lambda root: WordNotesApp(root),
+                      banner or spell.default_banner(),
+                      with_quit=False)
 
 
 if __name__ == "__main__":
