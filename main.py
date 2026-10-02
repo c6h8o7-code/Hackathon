@@ -1,37 +1,33 @@
-# -*- coding: utf-8 -*-
-"""åå…«å•è¯ â€”â€” è‹±è¯­è¯æ±‡è®°å¿†å·¥å…·ï¼ˆç¬¬äºŒä»£ï¼‰
+# -*- coding: gbk -*-
 
-è¯åº“æ”¾åœ¨ ./dev_english/ ç›®å½•ä¸‹ï¼Œä¸€ä¸ª .json æ–‡ä»¶å³ä¸€ä¸ªè¯åº“ï¼Œ
-æ–‡ä»¶åï¼ˆå»æ‰ .jsonï¼‰å°±æ˜¯è¯åº“åã€‚è¿è¡Œæ–¹å¼ï¼š
+"""Ê®°Ëµ¥´Ê ¡ª¡ª Ó¢Óï´Ê»ã¼ÇÒä¹¤¾ß£¨µÚ¶ş´ú£©
+
+´Ê¿â·ÅÔÚ ./dev_english/ Ä¿Â¼ÏÂ£¬Ò»¸ö .json ÎÄ¼ş¼´Ò»¸ö´Ê¿â£¬
+ÎÄ¼şÃû£¨È¥µô .json£©¾ÍÊÇ´Ê¿âÃû¡£ÔËĞĞ·½Ê½£º
 
     pip install wxPython
-    python åå…«å•è¯.py
+    python Ê®°Ëµ¥´Ê.py
 
-ç‚¹â€œå¼€å§‹æ‹¼å†™æµ‹è¯•(20è¯)â€ä¼šæ‰“å¼€ä¸€ä¸ª tkinter çª—å£åšæ‹¼å†™æµ‹éªŒï¼Œ
-é¢˜ç›®ä»ã€Œé…ç½®è¯åº“ã€é‡Œå‹¾é€‰çš„è¯åº“ä¸­éšæœºæŠ½å–ã€‚
+µã¡°¿ªÊ¼Æ´Ğ´²âÊÔ(20´Ê)¡±»á´ò¿ªÒ»¸ö tkinter ´°¿Ú×öÆ´Ğ´²âÑé£¬
+ÌâÄ¿´Ó¡¸ÅäÖÃ´Ê¿â¡¹Àï¹´Ñ¡µÄ´Ê¿âÖĞËæ»ú³éÈ¡¡£
 """
-
-import json
-import pathlib
-
-import spell, explain
+import json, A, spell, explain, word_game_tkinter, word_note, new_word_study
 
 try:
     import tkinter as tk
-except ImportError:          # ç¼ºå°‘ tkinter æ—¶ä¸»çª—å£ä»å¯æ­£å¸¸ä½¿ç”¨
+except ImportError:          # È±ÉÙ tkinter Ê±Ö÷´°¿ÚÈÔ¿ÉÕı³£Ê¹ÓÃ
     tk = None
 
 import wx
 
-APP_TITLE = u'åå…«å•è¯'
+APP_TITLE = u'Ê®°Ëµ¥´Ê'
 
-# è·¯å¾„éƒ½ç›¸å¯¹æœ¬è„šæœ¬æ‰€åœ¨ç›®å½•ï¼Œä»ä»»ä½•ä½ç½®è¿è¡Œéƒ½æ²¡é—®é¢˜
-BASE_DIR = pathlib.Path(__file__).resolve().parent
+# Â·¾¶¶¼Ïà¶Ô±¾½Å±¾ËùÔÚÄ¿Â¼£¬´ÓÈÎºÎÎ»ÖÃÔËĞĞ¶¼Ã»ÎÊÌâ
+BASE_DIR = A.app_dir()
 APP_ICON = BASE_DIR / 'icon.ico'
 LIB_DIR = BASE_DIR / 'dev_english'
-BANNER = BASE_DIR / '18å•è¯ç¬¬äºŒä»£å›¾æ ‡.gif'
 LATEST = BASE_DIR / 'latest.json'
-
+RESOURCE = BASE_DIR / 'res'
 # BUTTON ID
 ACCEPT_CONFIG_BUTTON = 1
 REFUSE_CONFIG_BUTTON = 2
@@ -43,12 +39,12 @@ EDIT_MENU = 2
 QUIZ_SIZE = 20
 
 
-# ---------------------------------------------------------------- è¯åº“è¯»å–
-# èœå•é‡Œæƒ³çœ‹åˆ°çš„å…ˆåé¡ºåºï¼›ä¸åœ¨è¡¨é‡Œçš„è¯åº“æŒ‰åç§°æ’åœ¨åé¢
-LIB_ORDER = ['åˆä¸€', 'åˆäºŒ', 'åˆä¸‰',
-             'å¿…ä¿®ç¬¬ä¸€å†Œ', 'å¿…ä¿®ç¬¬äºŒå†Œ', 'å¿…ä¿®ç¬¬ä¸‰å†Œ',
-             'é€‰æ‹©æ€§å¿…ä¿®ç¬¬ä¸€å†Œ', 'é€‰æ‹©æ€§å¿…ä¿®ç¬¬äºŒå†Œ',
-             'é€‰æ‹©æ€§å¿…ä¿®ç¬¬ä¸‰å†Œ', 'é€‰æ‹©æ€§å¿…ä¿®ç¬¬å››å†Œ']
+# ---------------------------------------------------------------- ´Ê¿â¶ÁÈ¡
+# ²Ëµ¥ÀïÏë¿´µ½µÄÏÈºóË³Ğò£»²»ÔÚ±íÀïµÄ´Ê¿â°´Ãû³ÆÅÅÔÚºóÃæ
+LIB_ORDER = ['³õÒ»', '³õ¶ş', '³õÈı',
+             '±ØĞŞµÚÒ»²á', '±ØĞŞµÚ¶ş²á', '±ØĞŞµÚÈı²á',
+             'Ñ¡ÔñĞÔ±ØĞŞµÚÒ»²á', 'Ñ¡ÔñĞÔ±ØĞŞµÚ¶ş²á',
+             'Ñ¡ÔñĞÔ±ØĞŞµÚÈı²á', 'Ñ¡ÔñĞÔ±ØĞŞµÚËÄ²á']
 
 
 def _lib_key(path):
@@ -57,7 +53,7 @@ def _lib_key(path):
 
 
 def load_libs():
-    """æ‰«æ dev_english ç›®å½•ï¼Œè¿”å› [(è¯åº“å, æ–‡ä»¶è·¯å¾„, å•è¯æ€»æ•°), ...]"""
+    """É¨Ãè dev_english Ä¿Â¼£¬·µ»Ø [(´Ê¿âÃû, ÎÄ¼şÂ·¾¶, µ¥´Ê×ÜÊı), ...]"""
     libs = []
     if not LIB_DIR.is_dir():
         return libs
@@ -65,18 +61,18 @@ def load_libs():
         count = 0
         try:
             data = json.loads(f.read_text(encoding='utf-8'))
-            if isinstance(data, dict) and isinstance(data.get('å•å…ƒ'), list):
-                count = sum(len(u.get('å•è¯', [])) for u in data['å•å…ƒ'])
+            if isinstance(data, dict) and isinstance(data.get('µ¥Ôª'), list):
+                count = sum(len(u.get('µ¥´Ê', [])) for u in data['µ¥Ôª'])
             elif isinstance(data, list):
                 count = len(data)
         except (OSError, ValueError) as exc:
-            print('è¯åº“ %s è¯»å–å¤±è´¥: %s' % (f.name, exc))
+            print('´Ê¿â %s ¶ÁÈ¡Ê§°Ü: %s' % (f.name, exc))
         libs.append((f.stem, f, count))
     return libs
 
 
 def load_selected(libs):
-    """è¯»ä¸Šæ¬¡å‹¾é€‰çš„è¯åº“ï¼›æ–‡ä»¶ç¼ºå¤±æˆ–æŸåæ—¶é»˜è®¤å…¨é€‰ã€‚"""
+    """¶ÁÉÏ´Î¹´Ñ¡µÄ´Ê¿â£»ÎÄ¼şÈ±Ê§»òËğ»µÊ±Ä¬ÈÏÈ«Ñ¡¡£"""
     names = {n for n, _, _ in libs}
     try:
         data = json.loads(LATEST.read_text(encoding='utf-8'))
@@ -92,36 +88,36 @@ def load_selected(libs):
 
 
 def save_selected(libs, selected):
-    """æŠŠå‹¾é€‰ç»“æœå†™å› latest.jsonï¼Œä¸‹æ¬¡å¯åŠ¨æ²¿ç”¨ã€‚"""
+    """°Ñ¹´Ñ¡½á¹ûĞ´»Ø latest.json£¬ÏÂ´ÎÆô¶¯ÑØÓÃ¡£"""
     data = {n: 1 for n, _, _ in libs if n in selected}
     try:
         LATEST.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                           encoding='utf-8')
     except OSError as exc:
-        print('ä¿å­˜ latest.json å¤±è´¥: %s' % exc)
+        print('±£´æ latest.json Ê§°Ü: %s' % exc)
 
 
-# ---------------------------------------------------------------- è¯åº“é€‰æ‹©å¯¹è¯æ¡†
+# ---------------------------------------------------------------- ´Ê¿âÑ¡Ôñ¶Ô»°¿ò
 class ConfigDialog(wx.Dialog):
-    """å‹¾é€‰éœ€è¦åŠ è½½çš„è¯åº“"""
+    """¹´Ñ¡ĞèÒª¼ÓÔØµÄ´Ê¿â"""
 
     def __init__(self, parent, libs, selected):
-        super().__init__(parent, title=u'é€‰æ‹©è¯åº“', size=(420, 380))
+        super().__init__(parent, title=u'Ñ¡Ôñ´Ê¿â', size=(420, 380))
 
         panel = wx.Panel(self)
         outer = wx.BoxSizer(wx.VERTICAL)
 
-        outer.Add(wx.StaticText(panel, label=u'è¯·å‹¾é€‰è¦å­¦ä¹ çš„è¯åº“ï¼š'),
+        outer.Add(wx.StaticText(panel, label=u'Çë¹´Ñ¡ÒªÑ§Ï°µÄ´Ê¿â£º'),
                   0, wx.ALL, 10)
 
-        # è¯åº“å¤šæ—¶ç”¨æ»šåŠ¨çª—å£ï¼Œé¿å…å‹¾é€‰æ¡†è¢«æŒ¤å‡ºå¯è§†åŒº
+        # ´Ê¿â¶àÊ±ÓÃ¹ö¶¯´°¿Ú£¬±ÜÃâ¹´Ñ¡¿ò±»¼·³ö¿ÉÊÓÇø
         scrolled = wx.ScrolledWindow(panel, style=wx.VSCROLL | wx.BORDER_SIMPLE)
         scrolled.SetScrollRate(0, 20)
         inner = wx.BoxSizer(wx.VERTICAL)
 
         self.checkboxes = []
         for name, path, count in libs:
-            cb = wx.CheckBox(scrolled, label=u'%sï¼ˆ%d è¯ï¼‰' % (name, count))
+            cb = wx.CheckBox(scrolled, label=u'%s£¨%d ´Ê£©' % (name, count))
             cb.SetValue(name in selected)
             inner.Add(cb, 0, wx.ALL, 6)
             self.checkboxes.append((cb, name))
@@ -129,10 +125,10 @@ class ConfigDialog(wx.Dialog):
 
         outer.Add(scrolled, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
 
-        # ç¡®å®š / å–æ¶ˆ
+        # È·¶¨ / È¡Ïû
         btns = wx.BoxSizer(wx.HORIZONTAL)
-        self.accept = wx.Button(panel, ACCEPT_CONFIG_BUTTON, u'ç¡®å®š')
-        self.refuse = wx.Button(panel, REFUSE_CONFIG_BUTTON, u'å–æ¶ˆ')
+        self.accept = wx.Button(panel, ACCEPT_CONFIG_BUTTON, u'È·¶¨')
+        self.refuse = wx.Button(panel, REFUSE_CONFIG_BUTTON, u'È¡Ïû')
         btns.AddStretchSpacer()
         btns.Add(self.accept, 0, wx.RIGHT, 10)
         btns.Add(self.refuse, 0, wx.RIGHT, 10)
@@ -142,7 +138,7 @@ class ConfigDialog(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.onButton)
 
     def onButton(self, evt):
-        # ç¡®å®šï¼šæŠŠé€‰ä¸­çš„è¯åº“åå›ä¼ ç»™ä¸»çª—å£ï¼›å–æ¶ˆï¼šä»€ä¹ˆä¹Ÿä¸æ”¹
+        # È·¶¨£º°ÑÑ¡ÖĞµÄ´Ê¿âÃû»Ø´«¸øÖ÷´°¿Ú£»È¡Ïû£ºÊ²Ã´Ò²²»¸Ä
         if evt.GetId() == ACCEPT_CONFIG_BUTTON:
             self.EndModal(wx.ID_OK)
         elif evt.GetId() == REFUSE_CONFIG_BUTTON:
@@ -151,15 +147,23 @@ class ConfigDialog(wx.Dialog):
     def get_selected(self):
         return {name for cb, name in self.checkboxes if cb.GetValue()}
 
+def flatten(lst):
+    result = []
+    for item in lst:
+        if isinstance(item, list):
+            result.extend(flatten(item))
+        else:
+            result.append(item)
+    return result
 
-# ---------------------------------------------------------------- ä¸»çª—å£
+# ---------------------------------------------------------------- Ö÷´°¿Ú
 class mainFrame(wx.Frame):
-    '''ç¨‹åºä¸»çª—å£ç±»ï¼Œç»§æ‰¿è‡ª wx.Frame'''
+    '''³ÌĞòÖ÷´°¿ÚÀà£¬¼Ì³Ğ×Ô wx.Frame'''
 
     def __init__(self):
-        '''æ„é€ å‡½æ•°'''
+        '''¹¹Ôìº¯Êı'''
         wx.Frame.__init__(self, None, -1, APP_TITLE,
-                          style=wx.DEFAULT_FRAME_STYLE & (~(wx.RESIZE_BORDER)))
+                          style=wx.DEFAULT_FRAME_STYLE & (~(wx.RESIZE_BORDER)) & (~wx.MAXIMIZE_BOX))
         self.SetBackgroundColour(wx.Colour(179, 224, 255))
         self.SetSize((800, 600))
         self.Center()
@@ -169,44 +173,73 @@ class mainFrame(wx.Frame):
 
         self.libs = load_libs()
         self.selected = load_selected(self.libs)
-        self._banner = None            # é˜²æ­¢ tk å›¾ç‰‡è¢«å›æ”¶
+        self._banner = None            # ·ÀÖ¹ tk Í¼Æ¬±»»ØÊÕ
 
         self.setWidgets()
         self.Bind(wx.EVT_MENU, self.menuHandler)
 
     def setWidgets(self):
-        '''è®¾ç½®æ§ä»¶'''
-        # èœå•æ 
+        '''ÉèÖÃ¿Ø¼ş'''
+        # ²Ëµ¥À¸
         self.menubar = wx.MenuBar()
         self.menuFile = wx.Menu()
         self.menuEdit = wx.Menu()
-        self.menuEdit.Append(CONFIG_MENU, u'é…ç½®è¯åº“')
-        self.menuFile.AppendSubMenu(self.menuEdit, u'ç¼–è¾‘')
-        self.menuFile.Append(QUIT_MENU, u'é€€å‡º(Alt+F4)')
-        self.menubar.Append(self.menuFile, u'æ–‡ä»¶')
+        self.menuEdit.Append(CONFIG_MENU, u'ÅäÖÃ´Ê¿â')
+        self.menuFile.AppendSubMenu(self.menuEdit, u'±à¼­')
+        self.menuFile.Append(QUIT_MENU, u'ÍË³ö(Alt+F4)')
+        self.menubar.Append(self.menuFile, u'ÎÄ¼ş')
         self.SetMenuBar(self.menubar)
 
-        # æ­£æ–‡ï¼šæ˜¾ç¤ºå½“å‰å·²é€‰è¯åº“ + å¼€å§‹æµ‹è¯•
+        # ÕıÎÄ£ºÏÔÊ¾µ±Ç°ÒÑÑ¡´Ê¿â + ¿ªÊ¼²âÊÔ
         panel = wx.Panel(self)
         panel.SetBackgroundColour(self.GetBackgroundColour())
         sizer = wx.BoxSizer(wx.VERTICAL)
-
-        self.info = wx.StaticText(panel, label=u'', style=wx.ALIGN_CENTER)
+        self.panel=panel
+        self.sizer=sizer
+        self.info = wx.StaticText(panel, label=u'', style=wx.ALIGN_CENTRE_HORIZONTAL)
         font = self.info.GetFont()
         font.SetPointSize(font.GetPointSize() + 4)
         self.info.SetFont(font)
 
-        self.startspell = wx.Button(panel, label=u'å¼€å§‹æ‹¼å†™æµ‹è¯•')
-        self.startspell.SetFont(font)
-        self.startspell.Bind(wx.EVT_BUTTON, self.start)
+        self.ttle = wx.StaticText(panel, label=u'18µ¥´Ê', size = (100, 40), pos = (350, 0), style=wx.ALIGN_CENTRE_HORIZONTAL)
+        fonth = self.info.GetFont()
+        fonth.SetPointSize(font.GetPointSize()+12)
+        self.ttle.SetFont(fonth)
 
-        self.startexplain = wx.Button(panel, label=u'å¼€å§‹å•è¯ç¿»è¯‘æµ‹è¯•ï¼ˆå›ºå®š100è¯ï¼‰', size = (400, 40))
+
+        self.startspell = wx.Button(panel, label=u'¿ªÊ¼Æ´Ğ´²âÊÔ', size = (400, 60), pos = (200, 250))
+        self.startspell.SetFont(font)
+        self.startspell.SetBitmap(wx.Image(str(RESOURCE / 'wordspell.png'), wx.BITMAP_TYPE_PNG).Rescale(50, 50))
+        self.startspell.Bind(wx.EVT_BUTTON, self.start)
+        
+        self.startexplain = wx.Button(panel, label=u'¿ªÊ¼µ¥´Ê·­Òë²âÊÔ£¨¹Ì¶¨100´Ê£©', size = (400, 60), pos = (200, 100))
         self.startexplain.SetFont(font)
+        self.startexplain.SetBitmap(wx.Image(str(RESOURCE / 'explain.gif'), wx.BITMAP_TYPE_PNG).Rescale(50, 50))
         self.startexplain.Bind(wx.EVT_BUTTON, self.start1)
 
+        self.startgame = wx.Button(panel, label = u'¿ªÊ¼Ìîµ¥´ÊÓÎÏ·', size = (400, 60), pos = (200, 150))
+        self.startgame.SetFont(font)
+        self.startgame.SetBitmap(wx.Image(str(RESOURCE / 'game.gif'), wx.BITMAP_TYPE_PNG).Rescale(50, 50))
+        self.startgame.Bind(wx.EVT_BUTTON, self.start2)
+
+        self.startstudy = wx.Button(panel, label = u'¿ªÊ¼Ñ§Ï°µ¥´Ê', size = (400, 60), pos = (200, 350))
+        self.startstudy.SetFont(font)
+        self.startstudy.SetBitmap(wx.Image(str(RESOURCE / 'wordstudy.png'), wx.BITMAP_TYPE_PNG).Rescale(50, 50))
+        self.startstudy.Bind(wx.EVT_BUTTON, self.start3)
+
+        self.startnote = wx.Button(panel, label = u'´ò¿ª´ÊÊé', size = (400, 60))
+        self.startnote.SetFont(font)
+        self.startnote.SetBitmap(wx.Image(str(RESOURCE / 'wordnote.gif'), wx.BITMAP_TYPE_PNG).Rescale(50, 50))
+        self.startnote.Bind(wx.EVT_BUTTON, self.start4)
+
         sizer.AddStretchSpacer()
-        sizer.Add(self.info, 0, wx.EXPAND | wx.ALL, 20)
+        # sizer.Add(self.info, 0, wx.EXPAND | wx.ALL, 30)
         sizer.Add(self.startspell, 0, wx.ALIGN_CENTER | wx.TOP | wx.BOTTOM, 16)
+        sizer.Add(self.startstudy, 0, wx.ALIGN_CENTER | wx.TOP | wx.BOTTOM, 19)
+        sizer.Add(self.startgame, 0, wx.ALIGN_CENTER | wx.TOP | wx.BOTTOM, 13)
+        sizer.Add(self.startexplain, 0, wx.ALIGN_CENTER | wx.TOP | wx.BOTTOM, 10)
+        sizer.Add(self.startnote, 0, wx.ALIGN_CENTER | wx.TOP | wx.BOTTOM, 7)
+        
         sizer.AddStretchSpacer()
         panel.SetSizer(sizer)
 
@@ -215,58 +248,73 @@ class mainFrame(wx.Frame):
     def refreshInfo(self):
         total = sum(c for n, _, c in self.libs if n in self.selected)
         if not self.libs:
-            self.info.SetLabel(u'æœªæ‰¾åˆ°è¯åº“ï¼Œè¯·æ£€æŸ¥ dev_english ç›®å½•')
+            self.info.SetLabel(u'Î´ÕÒµ½´Ê¿â£¬Çë¼ì²é dev_english Ä¿Â¼')
         elif not self.selected:
-            self.info.SetLabel(u'å½“å‰æœªé€‰æ‹©ä»»ä½•è¯åº“\nè¯·ä»ã€Œæ–‡ä»¶ - ç¼–è¾‘ - é…ç½®è¯åº“ã€ä¸­é€‰æ‹©')
+            self.info.SetLabel(u'µ±Ç°Î´Ñ¡ÔñÈÎºÎ´Ê¿â\nÇë´Ó¡¸ÎÄ¼ş - ±à¼­ - ÅäÖÃ´Ê¿â¡¹ÖĞÑ¡Ôñ')
         else:
-            names = u'ã€'.join(n for n, _, _ in self.libs if n in self.selected)
-            self.info.SetLabel(u'å·²é€‰è¯åº“ï¼š%s\nå…± %d è¯' % (names, total))
-        # æ²¡æœ‰å¯é€‰è¯åº“æ—¶ç¦ç”¨å¼€å§‹æŒ‰é’®ï¼ˆEnable æ˜¯æ–¹æ³•ï¼Œä¸èƒ½ç›´æ¥èµ‹å€¼ï¼‰
+            names = u'¡¢'.join(n for n, _, _ in self.libs if n in self.selected)
+            self.info.SetLabel(u'ÒÑÑ¡´Ê¿â£º%s\n¹² %d ´Ê' % (names, total))
+        # Ã»ÓĞ¿ÉÑ¡´Ê¿âÊ±½ûÓÃ¿ªÊ¼°´Å¥£¨Enable ÊÇ·½·¨£¬²»ÄÜÖ±½Ó¸³Öµ£©
         self.startspell.Enable(bool(self.libs and self.selected))
+        self.startstudy.Enable(bool(self.libs and self.selected))
         save_selected(self.libs, self.selected)
 
-    # ------------------------------------------------------------ æ‹¼å†™æµ‹è¯•
+    # ------------------------------------------------------------ Æ´Ğ´²âÊÔ
     def start(self, event):
         if not spell.available() or tk is None:
-            wx.MessageBox(u'æ‹¼å†™æµ‹è¯•éœ€è¦æ ‡å‡†åº“ tkinterï¼Œ\n'
-                          u'å½“å‰ Python æ²¡æœ‰è£…ï¼Œè¯·å…ˆå®‰è£…åå†è¯•ã€‚',
-                          u'æ— æ³•å¼€å§‹æµ‹è¯•', wx.ICON_WARNING, self)
+            wx.MessageBox(u'Æ´Ğ´ĞèÒª±ê×¼¿â tkinter£¬\n'
+                          u'µ±Ç° Python Ã»ÓĞ×°£¬ÇëÏÈ°²×°ºóÔÙÊÔ¡£',
+                          u'ÎŞ·¨¿ªÊ¼²âÊÔ', wx.ICON_WARNING, self)
             return
-        if spell.has_window():          # å·²ç»å¼€ç€ä¸€ä¸ªå°±åˆ«å†å¼€ä¸€ä¸ª
+        if spell.has_window():          # ÒÑ¾­¿ª×ÅÒ»¸ö¾Í±ğÔÙ¿ªÒ»¸ö
             spell.focus_window()
             return
 
         root = tk.Tk()
-        root.title(u'åå…«å•è¯ Â· æ‹¼å†™æµ‹è¯•')
+        root.title(u'Ê®°Ëµ¥´Ê ¡¤ Æ´Ğ´²âÊÔ')
         root.configure(bg=spell.BG)
 
-        # é¡¶éƒ¨ï¼šç¬¬äºŒä»£å›¾æ ‡ + é€€å‡ºæŒ‰é’®
+        # ¶¥²¿£ºµÚ¶ş´úÍ¼±ê + ÍË³ö°´Å¥
         top = tk.Frame(root, bg=spell.BG)
         top.pack(fill='x')
-        if BANNER.is_file():
-            try:
-                self._banner = tk.PhotoImage(file=str(BANNER))
-                tk.Label(top, image=self._banner, bg=spell.BG).pack(pady=(8, 4))
-            except tk.TclError as exc:
-                print('å›¾æ ‡åŠ è½½å¤±è´¥: %s' % exc)
-        tk.Button(top, text=u'é€€å‡º', command=spell.clear_window).pack(pady=(0, 6))
+        tk.Button(top, text=u'ÍË³ö', command=spell.clear_window).pack(pady=(0, 6))
 
         try:
             spell.WordQuizApp(root, names=sorted(self.selected))
         except spell.NoWordsError as exc:
-            wx.MessageBox(str(exc), u'æ²¡æœ‰å¯ç”¨è¯åº“', wx.ICON_WARNING, self)
+            wx.MessageBox(str(exc), u'Ã»ÓĞ¿ÉÓÃ´Ê¿â', wx.ICON_WARNING, self)
             root.destroy()
             return
         root.mainloop()
 
     def start1(self, event):
         if not explain.available() or tk is None:
-            wx.MessageBox(u'å•è¯ç¿»è¯‘æµ‹è¯•éœ€è¦æ ‡å‡†åº“ tkinterï¼Œ\n'
-                          u'å½“å‰ Python æ²¡æœ‰è£…ï¼Œè¯·å…ˆå®‰è£…åå†è¯•ã€‚',
-                          u'æ— æ³•å¼€å§‹æµ‹è¯•', wx.ICON_WARNING, self)
+            wx.MessageBox(u'µ¥´Ê·­ÒëĞèÒª±ê×¼¿â tkinter£¬\n'
+                          u'µ±Ç° Python Ã»ÓĞ×°£¬ÇëÏÈ°²×°ºóÔÙÊÔ¡£',
+                          u'ÎŞ·¨¿ªÊ¼²âÊÔ', wx.ICON_WARNING, self)
             return
         explain.run()
-    
+    def start2(self, event):
+        if not spell.available() or tk is None:
+            wx.MessageBox(u'µ¥´ÊÓÎÏ·ĞèÒª±ê×¼¿â tkinter£¬\n'
+                          u'µ±Ç° Python Ã»ÓĞ×°£¬ÇëÏÈ°²×°ºóÔÙÊÔ¡£',
+                          u'ÎŞ·¨¿ªÊ¼²âÊÔ', wx.ICON_WARNING, self)
+            return
+        word_game_tkinter.run()
+    def start3(self, event):
+        if not spell.available() or tk is None:
+            wx.MessageBox(u'Ñ§Ï°´ÊÓïĞèÒª±ê×¼¿â tkinter£¬\n'
+                          u'µ±Ç° Python Ã»ÓĞ×°£¬ÇëÏÈ°²×°ºóÔÙÊÔ¡£',
+                          u'ÎŞ·¨¿ªÊ¼²âÊÔ', wx.ICON_WARNING, self)
+            return
+        new_word_study.run(spell.load_words2(sorted(self.selected)))
+    def start4(self, event):
+        if not spell.available() or tk is None:
+            wx.MessageBox(u'´ÊÊéĞèÒª±ê×¼¿â tkinter£¬\n'
+                          u'µ±Ç° Python Ã»ÓĞ×°£¬ÇëÏÈ°²×°ºóÔÙÊÔ¡£',
+                          u'ÎŞ·¨¿ªÊ¼²âÊÔ', wx.ICON_WARNING, self)
+            return
+        word_note.run()
     def menuHandler(self, evt: wx.Event):
         if evt.GetId() == QUIT_MENU:
             self.Close()

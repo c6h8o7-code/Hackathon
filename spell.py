@@ -17,7 +17,7 @@
 """
 
 import json
-import pathlib
+import A
 import random
 
 try:                      # tkinter 是标准库，但部分 Python 发行版未带
@@ -27,7 +27,7 @@ except ImportError:       # 交给主程序提示用户，而不是整个程序�
     tk = None
     tkfont = None
 
-BASE_DIR = pathlib.Path(__file__).resolve().parent
+BASE_DIR = A.app_dir()
 LIB_DIR = BASE_DIR / 'dev_english'
 LATEST = BASE_DIR / 'latest.json'
 BANNER = BASE_DIR / '18单词第二代图标.gif'
@@ -100,6 +100,45 @@ def load_words(names=None):
                            else item).strip()
                 if text:
                     words.append(text)
+    return words
+
+def load_words2(names=None):
+    """把若干词库摊平成一个单词列表（但不只取「单词」这一列）。
+
+    names 为空时用 latest.json 的勾选结果；仍为空则用 dev_english 下全部词库。
+    """
+    if not names:
+        names = load_selected_names()
+    if not names:
+        names = [p.stem for p in sorted(LIB_DIR.glob('*.json'))]
+
+    words = []
+    for name in names:
+        path = LIB_DIR / ('%s.json' % name)
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        units = data.get('单元') if isinstance(data, dict) else data
+        if not isinstance(units, list):
+            continue
+        for unit in units:
+            if not isinstance(unit, dict):
+                continue
+            for item in unit.get('单词', []):
+                text = str(item.get('单词', '') if isinstance(item, dict)
+                           else item).strip()
+                yb = str(item.get('音标', '') if isinstance(item, dict)
+                           else item).strip()
+                cx = str(item.get('词性', '') if isinstance(item, dict)
+                           else item).strip()
+                sy = str(item.get('释义', '') if isinstance(item, dict)
+                           else item).strip()
+                
+                if text:
+                    words.append((text, yb, cx, sy))
     return words
 
 
