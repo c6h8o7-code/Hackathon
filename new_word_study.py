@@ -546,7 +546,7 @@ class WordLearningApp:
     # 快捷键
     # ============================================================
     def _bind_keys(self):
-        self.root.bind("<space>", self._on_next_key)
+        self.root.bind("<KeyPress-space>", self._on_next_key)
         self.root.bind("<Right>", self._on_next_key)
         self.root.bind("<Return>", self._on_next_key)
         self.root.bind("<Left>", lambda e: self.prev_word())
