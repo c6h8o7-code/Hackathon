@@ -288,17 +288,19 @@ class Particle:
 # ---------------------------------------------------------------- 涟漪效果
 class Ripple:
     """点击涟漪动画"""
-    def __init__(self, x, y, max_r=120):
+    def __init__(self, x, y, max_r=120, ripple_type='btn', color=(255, 255, 255)):
         self.x = x
         self.y = y
         self.r = 0
         self.max_r = max_r
         self.alpha = 180
         self.done = False
+        self.ripple_type = ripple_type   # 'btn'=按钮内涟漪, 'global'=全局背景涟漪
+        self.color = color               # 涟漪颜色 RGB
 
     def update(self):
         self.r += 6
-        self.alpha = max(0, int(180 * (1 - self.r / self.max_r)))
+        self.alpha = max(0, int(180 * (1 - self.r * self.r / self.max_r / self.max_r)))
         if self.r >= self.max_r:
             self.done = True
 
@@ -595,6 +597,23 @@ class mainFrame(wx.Frame):
                 gc.SetBrush(wx.Brush(wx.Colour(255, 255, 255)))
                 gc.DrawCircle(int(p.x), int(p.y), int(r))
 
+    def _draw_global_ripples(self, gc, w, h):
+        """绘制全局背景涟漪（窗口任意空白处点击产生）"""
+        ctx = gc.GetGraphicsContext() if hasattr(gc, 'GetGraphicsContext') else None
+        for ripple in self.ripples:
+            if ripple.ripple_type == 'global':
+                rc = ripple.color
+                ripple_color = wx.Colour(rc[0], rc[1], rc[2], ripple.alpha)
+                if ctx:
+                    ctx.SetBrush(ctx.CreateBrush(wx.Brush(ripple_color)))
+                    ctx.SetPen(wx.TRANSPARENT_PEN)
+                    ctx.DrawEllipse(ripple.x - ripple.r,
+                                    ripple.y - ripple.r,
+                                    ripple.r * 2, ripple.r * 2)
+                else:
+                    gc.SetBrush(wx.Brush(wx.Colour(rc[0], rc[1], rc[2])))
+                    gc.DrawCircle(int(ripple.x), int(ripple.y), int(ripple.r))
+
     def _draw_title(self, gc, w):
         """大标题：18单词，呼吸动画 + 渐变字"""
         ctx = gc.GetGraphicsContext() if hasattr(gc, 'GetGraphicsContext') else None
@@ -795,12 +814,16 @@ class mainFrame(wx.Frame):
             for ripple in self.ripples:
                 if hasattr(ripple, 'btn_key') and ripple.btn_key == key:
                     ra = int(ripple.alpha * alpha)
-                    ripple_color = wx.Colour(255, 255, 255, ra)
+                    rc = ripple.color
+                    ripple_color = wx.Colour(rc[0], rc[1], rc[2], ra)
                     if ctx:
                         ctx.SetBrush(ctx.CreateBrush(wx.Brush(ripple_color)))
+                        # 限制涟漪不超出按钮圆角区域
+                        ctx.Clip(rx, ry, rw, rh)
                         ctx.DrawEllipse(rx + ripple.x - ripple.r,
                                         ry + ripple.y - ripple.r,
                                         ripple.r * 2, ripple.r * 2)
+                        ctx.ResetClip()
 
             # 图标（emoji 字符）
             icon_char = Theme.BTN_ICONS.get(key, '●')
@@ -879,6 +902,21 @@ class mainFrame(wx.Frame):
 
         self.cfg_btn_rect = (int(bx), int(by), btn_w, btn_h)
 
+        # 配置按钮内的涟漪
+        for ripple in self.ripples:
+            if hasattr(ripple, 'btn_key') and ripple.btn_key == 'config':
+                rc = ripple.color
+                ripple_color = wx.Colour(rc[0], rc[1], rc[2], ripple.alpha)
+                if ctx:
+                    ctx.SetBrush(ctx.CreateBrush(wx.Brush(ripple_color)))
+                    ctx.SetPen(wx.TRANSPARENT_PEN)
+                    # 裁剪在圆角按钮区域内
+                    ctx.Clip(bx, by, btn_w, btn_h)
+                    ctx.DrawEllipse(bx + ripple.x - ripple.r,
+                                    by + ripple.y - ripple.r,
+                                    ripple.r * 2, ripple.r * 2)
+                    ctx.ResetClip()
+
     _cfg_hover = False
 
     def on_paint(self, event):
@@ -924,6 +962,7 @@ class mainFrame(wx.Frame):
             self._m = _compute_metrics(gc, h, len(self.BUTTONS))
 
         safe(self._draw_gradient_bg, gc, w, h)                 # 背景渐变
+        safe(self._draw_global_ripples, gc, w, h)              # 全局背景涟漪
         safe(self._draw_particles, gc, w, h)                   # 粒子
         safe(self._draw_top_bar, gc, w)                        # 顶栏
 
@@ -977,13 +1016,28 @@ class mainFrame(wx.Frame):
         hit = self._hit_test(x, y)
         if hit == 'config':
             self.btn_pressed = 'config'
+            # 配置按钮内部涟漪
+            bx, by, bw, bh = self.cfg_btn_rect
+            r = Ripple(x - bx, y - by, max_r=max(bw, bh) * 0.8, ripple_type='btn',
+                       color=(255, 255, 255))
+            r.btn_key = 'config'
+            self.ripples.append(r)
         elif hit and hit not in ('config',):
             self.btn_pressed = hit
             bx, by, bw, bh, ready, handler = self.btn_rects[hit]
-            # 创建涟漪
-            r = Ripple(x - bx, y - by, max_r=max(bw, bh) * 0.8)
+            # 创建按钮内涟漪（白色）
+            r = Ripple(x - bx, y - by, max_r=max(bw, bh) * 0.8, ripple_type='btn',
+                       color=(255, 255, 255))
             r.btn_key = hit
             self.ripples.append(r)
+        else:
+            # 空白区域全局涟漪（白色半透明，半径足够大覆盖整个窗口）
+            w, h = self.GetClientSize()
+            max_d = math.sqrt(w * w + h * h)
+            r = Ripple(x, y, max_r=200, ripple_type='global',
+                       color=(255, 255, 255))
+            self.ripples.append(r)
+
         self.Refresh()
         event.Skip()
 
@@ -1026,7 +1080,7 @@ class mainFrame(wx.Frame):
         self.launch(word_game_tkinter.run, u'填单词游戏')
 
     def start3(self, event):
-        self.launch(new_word_study.run, u'学习单词', T=spell.load_words2(sorted(self.selected)))
+        self.launch(new_word_study.run, u'学习单词', T=spell.load_words2(sorted(self.selected)), name=" §with§ ".join(sorted(self.selected)))
 
     def start4(self, event):
         self.launch(word_note.run, u'单词笔记')

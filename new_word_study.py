@@ -12,7 +12,7 @@
 
 import tkinter as tk
 import random
-import threading, word_note
+import threading, word_note, paths
 
 try:
     import winsound
@@ -371,6 +371,7 @@ WORDS = [
 ]
 
 ALPHABET = "abcdefghijklmnopqrstuvwxyz"
+import json
 
 
 class WordLearningApp:
@@ -387,18 +388,32 @@ class WordLearningApp:
     REREAD_DELAY_MS = 1200     # 错词重学时的轻锁时间
     MAX_REVIEW_ROUNDS = 3      # 错词最多重学几轮
 
-    def __init__(self, root, T):
+    def __init__(self, root, T, name):
         self.root = root
+        self.Name = name
         self.root.title("中考核心词 · 单词新学")
         self.root.configure(bg=self.BG_TOP)
         self.root.geometry("1200x800")
         self.root.minsize(900, 620)
-
+        
+            
         self.queue = T.copy()
         self.T = T.copy()
-        random.shuffle(self.queue)
-
         self.index = 0
+
+        with open(paths.app_dir() / "study_word_data.json", "a+", encoding="utf-8") as f:
+            try:
+                f.seek(0)
+                content = f.read().strip()
+                if content:
+                    data = json.loads(content)
+                else:
+                    data = {}
+            except Exception:
+                data = {}
+            
+            self.queue = data.get(name, self.queue)
+            self.index = data.get("index_"+name, 0)
         self.learned_count = 0
         self.delay_ms = self.DELAY_MS
         self.after_id = None
@@ -435,7 +450,6 @@ class WordLearningApp:
         self.state = "learn"
 
         self.sound = Sound(root)
-
         # ★ 先画背景，再建 UI
         self._draw_gradient_bg()
         self._build_ui()
@@ -1176,6 +1190,7 @@ class WordLearningApp:
             return
         self.queue = self.wrong_words.copy()
         random.shuffle(self.queue)
+
         self.wrong_words = []
         self.index = 0
         self.learned_count = 0
@@ -1215,17 +1230,42 @@ class WordLearningApp:
         # debug.txt，看起来像程序出错。
         self._cancel_timers()
         self.sound.exit()
+        
+        # 正确读取→修改→写入，避免w+清空后读取空文件
+        data_file = paths.app_dir() / "study_word_data.json"
+        try:
+            # 先读取已有数据
+            if data_file.exists():
+                with open(data_file, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        t = json.loads(content)
+                    else:
+                        t = {}
+            else:
+                t = {}
+        except Exception:
+            t = {}
+        
+        # 更新进度数据
+        t["index_"+self.Name] = self.index
+        t[self.Name] = self.T[self.index-1:]
+        
+        # 最后写入文件
+        with open(data_file, "w", encoding="utf-8") as f:
+            json.dump(t, f, ensure_ascii=False, indent=2)
+            
         self.root.after(180, self.root.destroy)
 
 
 # ============================================================
 # 入口
 # ============================================================
-def run(T):
+def run(T, name):
     root = tk.Tk()
-    app = WordLearningApp(root, T)
+    app = WordLearningApp(root, T, name)
     # 点右上角 X 也要走清理流程，否则挂起的定时器会在销毁后触发报错
     root.protocol('WM_DELETE_WINDOW', app.quit_app)
     root.mainloop()
 if __name__ == "__main__":
-    run(WORDS)
+    run(WORDS, name="default")

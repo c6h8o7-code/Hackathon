@@ -10,5 +10,4 @@ from A import (                    # noqa: F401
     ensure_lib_dir,
     is_frozen,
     resource,
-    resource_dir,
 )
