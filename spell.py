@@ -17,6 +17,7 @@
 """
 
 import json
+import pathlib
 import A
 import random, word_note
 import word_explosion
@@ -169,14 +170,44 @@ def clear_window():
             pass
 
 
+def attach_window(root):
+    """把外部自己创建的窗口登记进来，之后 clear_window()/has_window() 就能管到它。
+
+    单词笔记（word_note）因为页面顶部自带退出按钮，是自己建 root 的，
+    建好后调用本函数登记，主程序「已经开着一个就不再开第二个」才生效。
+    """
+    if root not in _ROOTS:
+        _ROOTS.append(root)
+    return root
+
+
+def _alive_roots():
+    """返回还活着的窗口，并顺手把已销毁的引用清掉。
+
+    用户点窗口右上角的 X 关闭时，root 被销毁但引用还留在 _ROOTS 里；
+    之前 has_window() 只看列表是否非空，于是窗口明明关掉了却仍返回 True，
+    再点「开始」按钮就会走 focus_window() 分支——去 focus 一个已经不存在的
+    窗口，结果就是「点了没反应，窗口再也打不开」。
+    """
+    alive = []
+    for root in _ROOTS:
+        try:
+            if root.winfo_exists():
+                alive.append(root)
+        except Exception:
+            pass
+    _ROOTS[:] = alive
+    return alive
+
+
 def has_window():
     """当前是否已有测试窗口开着。"""
-    return bool(_ROOTS)
+    return bool(_alive_roots())
 
 
 def focus_window():
     """把已经开着的测试窗口提到最前。"""
-    for root in _ROOTS:
+    for root in _alive_roots():
         try:
             root.deiconify()
             root.lift()
@@ -235,6 +266,9 @@ def open_window(factory, banner=None, with_quit=True):
         return
 
     root = _new_root(banner, with_quit)
+    # 统一在这里登记：各练习界面自己也会登记，但那样一旦漏掉某个界面，
+    # 「已经开着就别再开」的判断就会失效，集中做一次最稳。
+    attach_window(root)
     try:
         factory(root)
     except Exception:
@@ -290,7 +324,7 @@ class WordQuizApp:
         self.wrong_streak = 0           # 同一题的连续错误次数
         self.fail_threshold = 3         # 连续错几次触发爆炸
 
-        _ROOTS.append(root)
+        attach_window(root)             # 登记窗口（重复登记会自动去重）
         root.protocol('WM_DELETE_WINDOW', self.close)
         self.next_round()
 

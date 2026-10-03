@@ -406,6 +406,12 @@ class WordLearningApp:
         self.locked = False
         self.unlock_after_id = None
 
+        # 窗口一销毁就取消挂起的定时器。只靠 protocol('WM_DELETE_WINDOW')
+        # 不够：直接 destroy()、被父窗口回收、进程退出这些路径都不会走它，
+        # 而定时器到点后回调已被销毁的部件，Tcl 会抛
+        # "invalid command name ..._unlock_next"，打包后会被写进 debug.txt。
+        self.root.bind('<Destroy>', self._on_window_destroy)
+
         # 统计
         self.quiz_count = 0
         self.quiz_correct = 0
@@ -550,7 +556,8 @@ class WordLearningApp:
         self.root.bind("<KeyPress-P>", lambda e: self.toggle_pause())
         self.root.bind("<KeyPress-m>", lambda e: self.toggle_mute())
         self.root.bind("<KeyPress-M>", lambda e: self.toggle_mute())
-        self.root.bind("<KeyPress-+>", lambda e: self.addtolist())
+        # Tk 里 "+" 不是合法 keysym，必须写 "plus"，否则窗口一建就抛 TclError
+        self.root.bind("<KeyPress-plus>", lambda e: self.addtolist())
         
     def addtolist(self):
         if self.state == "quiz" or self.state == "finish": return
@@ -1185,7 +1192,28 @@ class WordLearningApp:
         )
         self.show_word()
 
+    def _cancel_timers(self):
+        """取消所有挂起的定时器（幂等，可重复调用）。"""
+        for attr in ('unlock_after_id', 'after_id'):
+            tid = getattr(self, attr, None)
+            if tid is not None:
+                try:
+                    self.root.after_cancel(tid)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def _on_window_destroy(self, event=None):
+        # <Destroy> 会为每个子控件都触发一次，只在根窗口那次才清理
+        if event is not None and getattr(event, 'widget', None) is not self.root:
+            return
+        self._cancel_timers()
+
     def quit_app(self):
+        # 先取消挂起的定时器：窗口销毁后它们再触发，Tcl 会抛
+        # "invalid command name ..._unlock_next"，打包后这类报错会被写进
+        # debug.txt，看起来像程序出错。
+        self._cancel_timers()
         self.sound.exit()
         self.root.after(180, self.root.destroy)
 
@@ -1196,6 +1224,8 @@ class WordLearningApp:
 def run(T):
     root = tk.Tk()
     app = WordLearningApp(root, T)
+    # 点右上角 X 也要走清理流程，否则挂起的定时器会在销毁后触发报错
+    root.protocol('WM_DELETE_WINDOW', app.quit_app)
     root.mainloop()
 if __name__ == "__main__":
     run(WORDS)

@@ -307,8 +307,23 @@ class WordNotesApp:
     # ─── 刷新列表 ─────────────────────────────────────────
 
     def _refresh_list(self):
+        # 上一次若是滚动模式，先解绑全局按键、拆掉旧 canvas。
+        # 否则下面的 destroy 会把 scroll_frame 一起销毁，而 self._mode 仍是
+        # "scroll"，_create_row 就会往一个已经销毁的窗口里塞控件，
+        # 抛 TclError 之后列表整片空白 —— 看起来就像"删掉一个词，全都没了"。
+        if self._mode == "scroll":
+            try:
+                self._teardown_scroll()
+            except Exception:
+                pass
+
         for w in self.container.winfo_children():
             w.destroy()
+
+        # 容器内容已清空，滚动状态一并复位，下面重新判定
+        self._mode = "simple"
+        self.scroll_frame = None
+        self.canvas = None
 
         if not self.words:
             self._show_empty()
@@ -318,46 +333,109 @@ class WordNotesApp:
         available = self.container.winfo_height()
         need_scroll = len(self.words) * self.ROW_HEIGHT > available and available > 0
 
-        if need_scroll and self._mode != "scroll":
+        if need_scroll:
             self._setup_scroll()
-        elif not need_scroll and self._mode != "simple":
-            self._teardown_scroll()
 
         target = self.scroll_frame if self._mode == "scroll" else self.container
         for idx, word in enumerate(self.words, start=1):
             self._create_row(target, idx, word)
 
     def _setup_scroll(self):
-        """切换到可滚动模式（仅键盘）"""
+        """切换到可滚动模式（带右侧滚动条 + 鼠标滚轮 + 键盘翻页）"""
         for w in self.container.winfo_children():
             w.destroy()
 
-        self.canvas = tk.Canvas(self.container, bg="#ffffff", highlightthickness=0)
-        self.scroll_frame = tk.Frame(self.canvas, bg="#ffffff")
-        self.scroll_frame.bind(
-            "<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw", tags="inner")
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfig("inner", width=e.width))
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+        # 右侧可见滚动条
+        scrollbar = tk.Scrollbar(self.container, orient=tk.VERTICAL)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 仅键盘上下键滚动，禁用滚轮
-        self.canvas.bind_all("<Up>", lambda e: self.canvas.yview_scroll(-1, "units"))
-        self.canvas.bind_all("<Down>", lambda e: self.canvas.yview_scroll(1, "units"))
-        self.canvas.bind_all("<Prior>", lambda e: self.canvas.yview_scroll(-5, "units"))
-        self.canvas.bind_all("<Next>", lambda e: self.canvas.yview_scroll(5, "units"))
+        # 画布
+        self.canvas = tk.Canvas(self.container, bg="#ffffff", highlightthickness=0,
+                                yscrollcommand=scrollbar.set)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.canvas.yview)
+
+        self.scroll_frame = tk.Frame(self.canvas, bg="#ffffff")
+        self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw", tags="inner")
+
+        # 画布宽度跟随窗口变化
+        def _on_configure(event):
+            self.canvas.itemconfig("inner", width=event.width)
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.canvas.bind("<Configure>", _on_configure)
+
+        # 内容变化时更新滚动区域
+        def _on_frame_configure(event=None):
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.scroll_frame.bind("<Configure>", _on_frame_configure)
+
+        # 鼠标滚轮支持（Windows/macOS 用 <MouseWheel>，Linux 用 <Button-4>/<Button-5>）
+        def _on_mousewheel(event):
+            if event.delta:
+                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                if event.num == 4:
+                    self.canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    self.canvas.yview_scroll(1, "units")
+
+        # 只在鼠标进入画布区域时生效，避免抢占其他控件的滚轮事件
+        def _bind_wheel(event=None):
+            self._wheel_bind_ids = [
+                self.canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+"),
+                self.canvas.bind_all("<Button-4>", _on_mousewheel, add="+"),
+                self.canvas.bind_all("<Button-5>", _on_mousewheel, add="+"),
+            ]
+        def _unbind_wheel(event=None):
+            for bid in self._wheel_bind_ids:
+                try:
+                    self.canvas.unbind_all("<MouseWheel>", bid)
+                    self.canvas.unbind_all("<Button-4>", bid)
+                    self.canvas.unbind_all("<Button-5>", bid)
+                except Exception:
+                    pass
+            self._wheel_bind_ids = []
+
+        self._wheel_bind_ids = []
+        self.canvas.bind("<Enter>", _bind_wheel)
+        self.canvas.bind("<Leave>", _unbind_wheel)
+        _bind_wheel()  # 初始绑定一次
+
+        # 键盘翻页（仅当焦点在本窗口时生效）
+        self._key_bind_ids = [
+            self.root.bind("<Up>", lambda e: self.canvas.yview_scroll(-1, "units")),
+            self.root.bind("<Down>", lambda e: self.canvas.yview_scroll(1, "units")),
+            self.root.bind("<Prior>", lambda e: self.canvas.yview_scroll(-5, "units")),
+            self.root.bind("<Next>", lambda e: self.canvas.yview_scroll(5, "units")),
+        ]
 
         self._mode = "scroll"
 
     def _teardown_scroll(self):
-        """切换回简单模式"""
-        self.canvas.unbind_all("<Up>")
-        self.canvas.unbind_all("<Down>")
-        self.canvas.unbind_all("<Prior>")
-        self.canvas.unbind_all("<Next>")
+        """切换回简单模式，解绑所有事件避免残留"""
+        # 解绑滚轮事件
+        if hasattr(self, '_wheel_bind_ids') and self._wheel_bind_ids:
+            for bid in self._wheel_bind_ids:
+                try:
+                    self.root.unbind_all("<MouseWheel>", bid)
+                    self.root.unbind_all("<Button-4>", bid)
+                    self.root.unbind_all("<Button-5>", bid)
+                except Exception:
+                    pass
+            self._wheel_bind_ids = []
+        # 解绑键盘事件
+        if hasattr(self, '_key_bind_ids') and self._key_bind_ids:
+            keys = ["<Up>", "<Down>", "<Prior>", "<Next>"]
+            for seq, bid in zip(keys, self._key_bind_ids):
+                try:
+                    self.root.unbind(seq, bid)
+                except Exception:
+                    pass
+            self._key_bind_ids = []
         for w in self.container.winfo_children():
             w.destroy()
         self._mode = "simple"
+
 
     # ─── 创建行 ───────────────────────────────────────────
 
@@ -814,6 +892,51 @@ class WordNotesApp:
 
 # ─── 启动 ─────────────────────────────────────────────────
 
+# ─── 单窗口管理（供主程序与其它模块统一调用）────────────────
+_OWN_ROOT = None
+
+
+def _set_root(root):
+    global _OWN_ROOT
+    _OWN_ROOT = root
+
+
+def has_window():
+    """当前是否已经开着单词笔记窗口。"""
+    r = _OWN_ROOT
+    if r is None:
+        return False
+    try:
+        return bool(r.winfo_exists())
+    except Exception:
+        return False
+
+
+def focus_window():
+    """把已经开着的单词笔记窗口提到最前。"""
+    r = _OWN_ROOT
+    if r is None:
+        return
+    try:
+        r.deiconify()
+        r.lift()
+        r.focus_force()
+    except Exception:
+        pass
+
+
+def clear_window():
+    """关闭单词笔记窗口。"""
+    global _OWN_ROOT
+    r, _OWN_ROOT = _OWN_ROOT, None
+    if r is None:
+        return
+    try:
+        r.destroy()
+    except Exception:
+        pass
+
+
 def run(banner=None):
     """打开单词笔记窗口（阻塞到关窗为止）。
 
@@ -833,13 +956,23 @@ def run(banner=None):
         root.mainloop()
         return
 
-    if spell.has_window():
-        spell.focus_window()
+    if has_window() or spell.has_window():
+        focus_window()
+        try:
+            spell.focus_window()
+        except Exception:
+            pass
         return
+
+    def _factory(root):
+        _set_root(root)
+        return WordNotesApp(root)
+
     # 本窗口自己带左上角「退出」按钮（放在页面顶部栏里），所以不要框架再加一个
-    spell.open_window(lambda root: WordNotesApp(root),
+    spell.open_window(_factory,
                       banner or spell.default_banner(),
                       with_quit=False)
+    _set_root(None)
 
 
 if __name__ == "__main__":
